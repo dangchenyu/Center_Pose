@@ -1,0 +1,15 @@
+*.ckpt*
+*.pt
+*.pth
+*.so
+*.pyc
+*.json
+*.tgz
+*.zip
+*.weights
+*.jpg
+*.mp4
+*.DS_Store
+data/
+.idea/
+delete_for_now/
