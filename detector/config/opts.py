@@ -21,7 +21,7 @@ class opts(object):
                                   '2: show the network output features'
                                   '3: use matplot to display' # useful when lunching training with ipython notebook
                                   '4: save all visualizations to disk')
-    self.parser.add_argument('--load_model', default='/home/rvlab/Documents/lighttrack/weights/CenterNet/ctdet_coco_dla_2x.pth',
+    self.parser.add_argument('--load_model', default='/home/rvlab/PycharmProjects/Center_Pose/weights/CenterNet/ctdet_coco_dla_2x.pth',
                              help='path to pretrained model')
     self.parser.add_argument('--resume', action='store_true',
                              help='resume an experiment. '

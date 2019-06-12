@@ -46,8 +46,8 @@ def show_all_from_standard_json(json_file_path, classes, joint_pairs, joint_name
             joints = reshape_keypoints_into_joints(pose_keypoints_2d)
 
             if flag_track is True:
-                track_id = candidate["track_id"]
-                img = show_poses_from_python_data(img, joints, joint_pairs, joint_names, track_id = track_id)
+                # track_id = candidate["track_id"]
+                img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
                 #img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
             else:
                 img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)

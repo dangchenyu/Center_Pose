@@ -24,14 +24,11 @@ from lib.tfflat.logger import colorlogger
 from lib.nms.gpu_nms import gpu_nms
 from lib.nms.cpu_nms import cpu_nms
 
-# import GCN utils
-from graph import visualize_pose_matching
-# from graph.visualize_pose_matching import *
 
 # import my own utils
 import sys, os, time
 
-from visualizer import show_all_from_standard_json, make_video_from_images
+from visualizer import *
 sys.path.append(os.path.abspath("./graph/"))
 from utils_json import *
 from utils_io_file import *
@@ -78,11 +75,8 @@ def light_track(pose_estimator,detector,
     st_time_total = time.time()
 
     # process the frames sequentially
-    keypoints_list = []
-    bbox_dets_list = []
+
     frame_prev = -1
-    frame_cur = 0
-    next_id = 0
     bbox_dets_list_list = []
     keypoints_list_list = []
 
@@ -102,217 +96,106 @@ def light_track(pose_estimator,detector,
             frame_prev -= 1
 
         ''' KEYFRAME: loading results from other modules '''
-        if is_keyframe(img_id, keyframe_interval) or flag_mandatory_keyframe:
-            flag_mandatory_keyframe = False
-            bbox_dets_list = []  # keyframe: start from empty
-            keypoints_list = []  # keyframe: start from empty
+        # if is_keyframe(img_id, keyframe_interval) or flag_mandatory_keyframe:
+        bbox_dets_list = []  # keyframe: start from empty
+        keypoints_list = []  # keyframe: start from empty
 
-            # perform detection at keyframes
-            st_time_detection = time.time()
-            if detector=='Centernet':
-                from detector.CenterNet import CtdetDetector
-                from detector.config.opts import opts
-                opt = opts().init()
-                centernet = CtdetDetector(opt)
-                human_candidates = centernet.run(img_path)
-            elif detector=='yolo':
-                from detector.detector_yolov3 import inference_yolov3
-                human_candidates = inference_yolov3(img_path)
-            #
-            # img=cv2.imread(img_path)
-            # for i in human_candidates:
-            #     print(i)
-            #     cv2.rectangle(img, (int(i[0]), int(i[1])), (int(i[2] + i[0]), int(i[3] + i[1])), (0, 155, 0), 5)
-            # cv2.imshow('person', img)
-            # cv2.waitKey()
-            end_time_detection = time.time()
-            total_time_DET += (end_time_detection - st_time_detection)
+        # perform detection at keyframes
+        st_time_detection = time.time()
+        if detector=='Centernet':
+            from detector.CenterNet import CtdetDetector
+            from detector.config.opts import opts
+            opt = opts().init()
+            centernet = CtdetDetector(opt)
+            human_candidates = centernet.run(img_path)
+        elif detector=='yolo':
+            from detector.detector_yolov3 import inference_yolov3
+            human_candidates = inference_yolov3(img_path)
 
-            num_dets = len(human_candidates)
-            print("Keyframe: {} detections".format(num_dets))
+        end_time_detection = time.time()
+        total_time_DET += (end_time_detection - st_time_detection)
 
-            # if nothing detected at keyframe, regard next frame as keyframe because there is nothing to track
-            if num_dets <= 0:
-                # add empty result
-                bbox_det_dict = {"img_id":img_id,
-                                 "det_id":  0,
-                                 "track_id": -1,
-                                 "imgpath": img_path,
-                                 "bbox": [0, 0, 2, 2]}
-                bbox_dets_list.append(bbox_det_dict)
+        num_dets = len(human_candidates)
+        print("Keyframe: {} detections".format(num_dets))
 
-                keypoints_dict = {"img_id":img_id,
-                                  "det_id": 0,
-                                  "track_id": -1,
-                                  "imgpath": img_path,
-                                  "keypoints": []}
-                keypoints_list.append(keypoints_dict)
+        # if nothing detected at keyframe, regard next frame as keyframe because there is nothing to track
+        if num_dets <= 0:
+            # add empty result
+            bbox_det_dict = {"img_id":img_id,
+                             "det_id":  0,
+                             "imgpath": img_path,
+                             "bbox": [0, 0, 2, 2]}
+            bbox_dets_list.append(bbox_det_dict)
 
-                bbox_dets_list_list.append(bbox_dets_list)
-                keypoints_list_list.append(keypoints_list)
+            keypoints_dict = {"img_id":img_id,
+                              "det_id": 0,
+                              "imgpath": img_path,
+                              "keypoints": []}
+            keypoints_list.append(keypoints_dict)
 
-                flag_mandatory_keyframe = True
-                continue
-
-            ''' 2. statistics: get total number of detected persons '''
-            total_num_PERSONS += num_dets
-
-            for det_id in range(num_dets):
-                # obtain bbox position and track id
-                bbox_gt = human_candidates[det_id]
-
-                # enlarge bbox by 20% with same center position
-                bbox_x1y1x2y2 = xywh_to_x1y1x2y2(bbox_gt)
-                bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, enlarge_scale)
-                bbox_gt = x1y1x2y2_to_xywh(bbox_in_xywh)
-
-                # Keyframe: use provided bbox
-                bbox_det = bbox_gt
-                if bbox_det[2] <= 0 or bbox_det[3] <= 0 or bbox_det[2] > 2000 or bbox_det[3] > 2000:
-                    bbox_det = [0, 0, 2, 2]
-                    track_id = None  # this id means null
-                    continue
-
-                # update current frame bbox
-                bbox_det_dict = {"img_id":img_id,
-                                 "det_id":det_id,
-                                 "imgpath": img_path,
-                                 "bbox":bbox_det}
-                # obtain keypoints for each bbox position in the keyframe
-                st_time_pose = time.time()
-                keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
-                end_time_pose = time.time()
-                total_time_POSE += (end_time_pose - st_time_pose)
-                keypoints_gt = keypoints
-
-                if img_id == 0:
-                    track_id = next_id
-                    next_id += 1
-                else:
-                    track_id = get_track_id_SpatialConsistency(bbox_gt, bbox_dets_list_list, img_id)
-                    if track_id == -1: # this id means not found
-                        track_id = get_track_id_SGCN(bbox_gt, bbox_dets_list_list, keypoints_gt, keypoints_list_list, img_id)
-
-                    if track_id == -1 and not bbox_invalid(bbox_det):
-                        track_id = next_id
-                        next_id += 1
-
-                if bbox_invalid(bbox_det):
-                    track_id = None # this id means null
-                    keypoints = []
-                    continue
-
-                # update current frame bbox
-                bbox_det_dict = {"img_id":img_id,
-                                 "det_id":det_id,
-                                 "track_id":track_id,
-                                 "imgpath": img_path,
-                                 "bbox":bbox_det}
-                bbox_dets_list.append(bbox_det_dict)
-
-                # update current frame keypoints
-                keypoints_dict = {"img_id":img_id,
-                                  "det_id":det_id,
-                                  "track_id":track_id,
-                                  "imgpath": img_path,
-                                  "keypoints":keypoints}
-                keypoints_list.append(keypoints_dict)
-
-            # update frame
             bbox_dets_list_list.append(bbox_dets_list)
             keypoints_list_list.append(keypoints_list)
-            frame_prev = frame_cur
 
-        else:
-            ''' NOT KEYFRAME: multi-target pose tracking '''
-            bbox_dets_list_next = []
-            keypoints_list_next = []
+            continue
 
-            num_dets = len(keypoints_list)
-            total_num_PERSONS += num_dets
+        ''' 2. statistics: get total number of detected persons '''
+        total_num_PERSONS += num_dets
 
-            if num_dets == 0:
-                flag_mandatory_keyframe = True
+        for det_id in range(num_dets):
+            # obtain bbox position and track id
+            bbox_gt = human_candidates[det_id]
 
-            for det_id in range(num_dets):
-                keypoints = keypoints_list[det_id]["keypoints"]
+            # enlarge bbox by 20% with same center position
+            bbox_x1y1x2y2 = xywh_to_x1y1x2y2(bbox_gt)
+            bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, enlarge_scale)
+            bbox_gt = x1y1x2y2_to_xywh(bbox_in_xywh)
 
-                # for non-keyframes, the tracked target preserves its track_id
-                track_id = keypoints_list[det_id]["track_id"]
+            # Keyframe: use provided bbox
+            bbox_det = bbox_gt
+            if bbox_det[2] <= 0 or bbox_det[3] <= 0 or bbox_det[2] > 2000 or bbox_det[3] > 2000:
+                bbox_det = [0, 0, 2, 2]
+                track_id = None  # this id means null
+                continue
 
-                # next frame bbox
-                bbox_det_next = get_bbox_from_keypoints(keypoints)
-                if bbox_det_next[2] == 0 or bbox_det_next[3] == 0:
-                    bbox_det_next = [0, 0, 2, 2]
-                    total_num_PERSONS -= 1
-                assert(bbox_det_next[2] != 0 and bbox_det_next[3] != 0) # width and height must not be zero
-                bbox_det_dict_next = {"img_id":img_id,
-                                     "det_id":det_id,
-                                     "track_id":track_id,
-                                     "imgpath": img_path,
-                                     "bbox":bbox_det_next}
+            # update current frame bbox
+            bbox_det_dict = {"img_id":img_id,
+                             "det_id":det_id,
+                             "imgpath": img_path,
+                             "bbox":bbox_det}
+            # obtain keypoints for each bbox position in the keyframe
+            st_time_pose = time.time()
+            keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
+            end_time_pose = time.time()
+            total_time_POSE += (end_time_pose - st_time_pose)
+            keypoints_gt = keypoints
 
-                # next frame keypoints
-                st_time_pose = time.time()
-                keypoints_next = inference_keypoints(pose_estimator, bbox_det_dict_next)[0]["keypoints"]
-                end_time_pose = time.time()
-                total_time_POSE += (end_time_pose - st_time_pose)
-                #print("time for pose estimation: ", (end_time_pose - st_time_pose))
+            bbox_det_dict = {"img_id":img_id,
+                             "det_id":det_id,
+                             "imgpath": img_path,
+                             "bbox":bbox_det}
+            bbox_dets_list.append(bbox_det_dict)
 
-                # check whether the target is lost
-                target_lost = is_target_lost(keypoints_next)
+            # update current frame keypoints
+            keypoints_dict = {"img_id":img_id,
+                              "det_id":det_id,
+                              "imgpath": img_path,
+                              "keypoints":keypoints}
+            keypoints_list.append(keypoints_dict)
 
-                if target_lost is False:
-                    bbox_dets_list_next.append(bbox_det_dict_next)
-                    keypoints_dict_next = {"img_id":img_id,
-                                           "det_id":det_id,
-                                           "track_id":track_id,
-                                           "imgpath": img_path,
-                                           "keypoints":keypoints_next}
-                    keypoints_list_next.append(keypoints_dict_next)
+        # update frame
+        bbox_dets_list_list.append(bbox_dets_list)
+        keypoints_list_list.append(keypoints_list)
+        frame_prev = frame_cur
 
-                else:
-                    # remove this bbox, do not register its keypoints
-                    bbox_det_dict_next = {"img_id":img_id,
-                                          "det_id":  det_id,
-                                          "track_id": -1,
-                                          "imgpath": img_path,
-                                          "bbox": [0, 0, 2, 2]}
-                    bbox_dets_list_next.append(bbox_det_dict_next)
 
-                    keypoints_null = 45*[0]
-                    keypoints_dict_next = {"img_id":img_id,
-                                           "det_id":det_id,
-                                           "track_id":track_id,
-                                           "imgpath": img_path,
-                                           "keypoints": []}
-                    keypoints_list_next.append(keypoints_dict_next)
-                    print("Target lost. Process this frame again as keyframe. \n\n\n")
-                    flag_mandatory_keyframe = True
-
-                    total_num_PERSONS -= 1
-                    ## Re-process this frame by treating it as a keyframe
-                    if img_id not in [0]:
-                        img_id -= 1
-                    break
-
-            # update frame
-            if flag_mandatory_keyframe is False:
-                bbox_dets_list = bbox_dets_list_next
-                keypoints_list = keypoints_list_next
-                bbox_dets_list_list.append(bbox_dets_list)
-                keypoints_list_list.append(keypoints_list)
-                frame_prev = frame_cur
-
-    ''' 1. statistics: get total time for lighttrack processing'''
+    # ''' 1. statistics: get total time for lighttrack processing'''
     end_time_total = time.time()
     total_time_ALL += (end_time_total - st_time_total)
 
     # convert results into openSVAI format
     print("Exporting Results in openSVAI Standard Json Format...")
     poses_standard = pose_to_standard_mot(keypoints_list_list, bbox_dets_list_list)
-    #json_str = python_to_json(poses_standard)
-    #print(json_str)
+
 
     # output json file
     pose_json_folder, _ = get_parent_folder_from_path(output_json_path)
@@ -332,104 +215,6 @@ def light_track(pose_estimator,detector,
         make_video_from_images(img_paths, output_video_path, fps=avg_fps, size=None, is_color=True, format="XVID")
 
 
-def get_track_id_SGCN(bbox_gt, bbox_dets_list_list, keypoints_gt, keypoints_list_list, img_id):
-    assert(len(bbox_dets_list_list) == len(keypoints_list_list))
-
-    # get bboxes from previous frame
-    bbox_dets_list = bbox_dets_list_list[img_id - 1]
-    keypoints_list = keypoints_list_list[img_id - 1]
-
-    for det_id, bbox_det_dict in enumerate(bbox_dets_list):
-        bbox_det = bbox_det_dict["bbox"]
-
-        # check the pose matching score
-        keypoints_dict = keypoints_list[det_id]
-        keypoints = keypoints_dict["keypoints"]
-        pose_matching_score = get_pose_matching_score(keypoints_gt, keypoints, bbox_gt, bbox_det)
-
-        global pose_matching_threshold
-        if pose_matching_score <= pose_matching_threshold:
-            # match the target based on the pose matching score
-            track_id = bbox_det_dict["track_id"]
-            return track_id
-
-    # if track_id is still not assigned, the person is really missing or track is really lost
-    track_id = -1
-    return track_id
-
-
-def get_track_id_SpatialConsistency(bbox_gt, bbox_dets_list_list, img_id):
-    # get bboxes from previous frame
-    bbox_dets_list = bbox_dets_list_list[img_id - 1]
-
-    thresh = 0.3
-    max_iou_score = -1000
-    max_index = -1
-
-    for bbox_index, bbox_det_dict in enumerate(bbox_dets_list):
-        bbox_det = bbox_det_dict["bbox"]
-
-        boxA = xywh_to_x1y1x2y2(bbox_gt)
-        boxB = xywh_to_x1y1x2y2(bbox_det)
-        iou_score = iou(boxA, boxB)
-        if iou_score > max_iou_score:
-            max_iou_score = iou_score
-            max_index = bbox_index
-
-    if max_iou_score > thresh:
-        return bbox_dets_list[max_index]["track_id"]
-    else:
-        return -1
-
-
-# def get_pose_matching_score(keypoints_A, keypoints_B, bbox_A, bbox_B):
-#     if keypoints_A == [] or keypoints_B == []:
-#         print("graph not correctly generated!")
-#         return sys.maxsize
-#
-#     if bbox_invalid(bbox_A) or bbox_invalid(bbox_B):
-#         print("graph not correctly generated!")
-#         return sys.maxsize
-#
-#     graph_A, flag_pass_check = keypoints_to_graph(keypoints_A, bbox_A)
-#     if flag_pass_check is False:
-#         print("graph not correctly generated!")
-#         return sys.maxsize
-#
-#     graph_B, flag_pass_check = keypoints_to_graph(keypoints_B, bbox_B)
-#     if flag_pass_check is False:
-#         print("graph not correctly generated!")
-#         return sys.maxsize
-#
-#     sample_graph_pair = (graph_A, graph_B)
-#     data_A, data_B = graph_pair_to_data(sample_graph_pair)
-#
-#     start = time.time()
-#     flag_match, dist = pose_matching(data_A, data_B)
-#     end = time.time()
-#     return dist
-
-
-def is_target_lost(keypoints, method="max_average"):
-    num_keypoints = int(len(keypoints) / 3.0)
-    if method == "average":
-        # pure average
-        score = 0
-        for i in range(num_keypoints):
-            score += keypoints[3*i + 2]
-        score /= num_keypoints*1.0
-        print("target_score: {}".format(score))
-    elif method == "max_average":
-        score_list = keypoints[2::3]
-        score_list_sorted = sorted(score_list)
-        top_N = 4
-        assert(top_N < num_keypoints)
-        top_scores = [score_list_sorted[-i] for i in range(1, top_N+1)]
-        score = sum(top_scores)/top_N
-    if score < 0.6:
-        return True
-    else:
-        return False
 
 
 def iou(boxA, boxB):
@@ -625,6 +410,7 @@ def get_keypoints_from_pose(pose_heatmaps, details, cls_skeleton, crops, start_i
             cls_skeleton[test_image_id, w, :2] = (x * 4 + 2, y * 4 + 2)
             cls_skeleton[test_image_id, w, 2] = r0[w, int(round(y) + 1e-10), int(round(x) + 1e-10)]
 
+
         # map back to original images
         crops[test_image_id, :] = details[test_image_id - start_id, :]
         for w in range(cfg.nr_skeleton):
@@ -690,7 +476,7 @@ def pose_to_standard_mot(keypoints_list_list, dets_list_list):
 
             img_id = keypoints_dict["img_id"]
             det_id = keypoints_dict["det_id"]
-            track_id = keypoints_dict["track_id"]
+            # track_id = keypoints_dict["track_id"]
             img_path = keypoints_dict["imgpath"]
 
             bbox_dets_data = dets_list[det_id]
@@ -707,7 +493,6 @@ def pose_to_standard_mot(keypoints_list_list, dets_list_list):
 
                 candidate = {"det_bbox": bbox_in_xywh,
                              "det_score": 1,
-                             "track_id": track_id,
                              "track_score": track_score,
                              "pose_keypoints_2d": keypoints}
             candidate_list.append(candidate)
@@ -737,7 +522,7 @@ def bbox_invalid(bbox):
 if __name__ == '__main__':
     # global args
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video_path', '-v', type=str, dest='video_path', default="/home/rvlab/Documents/lighttrack/data/demo/video.mp4")
+    parser.add_argument('--video_path', '-v', type=str, dest='video_path', default="data/demo/video.mp4")
     parser.add_argument('--model', '-m', type=str, dest='test_model', default="weights/mobile-deconv/snapshot_296.ckpt")
     parser.add_argument('--detector','-d',type=str,dest='human_detector',default='Centernet')
     args = parser.parse_args()

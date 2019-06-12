@@ -1,4 +1,4 @@
-# command line: /home/rvlab/Documents/lighttrack/demo_video_mobile.py
+# command line: /home/rvlab/PycharmProjects/Center_Pose/demo_video_mobile.py
 
 config: graph/config/inference.yaml
 device:

@@ -39,40 +39,40 @@ def show_poly_from_standard_json(json_file_path, classes, joint_pairs, joint_nam
 
             if score < draw_threshold: continue
 
-            if flag_track is True:
-                track_id = candidate["track_id"]
-                if track_id == 55: continue
-                if track_id == 49: continue
-                if track_id == 120: continue
-                img = draw_bbox(img, bbox, score, classes, track_id = track_id)
-            else:
-                img = draw_bbox(img, bbox, score, classes)
+            # if flag_track is True:
+            #     track_id = candidate["track_id"]
+            #     if track_id == 55: continue
+            #     if track_id == 49: continue
+            #     if track_id == 120: continue
+            #     img = draw_bbox(img, bbox, score, classes, track_id = track_id)
+            # else:
+            img = draw_bbox(img, bbox, score, classes)
 
             # draw polys on the image
             polys = candidate["segmentation"]
             img_copy = img.copy()
-            if flag_track is True:
-                track_id = candidate["track_id"]
-                if track_id == 55: continue
-                if track_id == 49: continue
-                if track_id == 120: continue
-                img = draw_poly(img, polys, track_id = track_id)
-            else:
-                img = draw_poly(img, polys)
+            # if flag_track is True:
+            #     track_id = candidate["track_id"]
+            #     if track_id == 55: continue
+            #     if track_id == 49: continue
+            #     if track_id == 120: continue
+            #     img = draw_poly(img, polys, track_id = track_id)
+            # else:
+            img = draw_poly(img, polys)
             img = img*0.3 + img_copy*0.7
 
             pose_keypoints_2d = candidate["pose_keypoints_2d"]
             joints = reshape_keypoints_into_joints(pose_keypoints_2d)
 
-            if flag_track is True:
-                #track_id = candidate["track_id"]
-                #img = show_poses_from_python_data(img, joints, joint_pairs, joint_names, track_id = track_id)
-                if track_id == 55: continue
-                if track_id == 49: continue
-                if track_id == 120: continue
-                img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
-            else:
-                img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
+            # if flag_track is True:
+            #     #track_id = candidate["track_id"]
+            #     #img = show_poses_from_python_data(img, joints, joint_pairs, joint_names, track_id = track_id)
+            #     if track_id == 55: continue
+            #     if track_id == 49: continue
+            #     if track_id == 120: continue
+            #     img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
+            # else:
+            img = show_poses_from_python_data(img, joints, joint_pairs, joint_names)
 
             if output_folder_path is not None:
                 create_folder(output_folder_path)

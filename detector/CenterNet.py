@@ -200,12 +200,12 @@ class CtdetDetector(object):
 
         return human_candidates
 if __name__ == "__main__":
-    img_path = "/home/rvlab/Documents/lighttrack/data/pedestrian-phone.jpg"
+    img_path = "/home/rvlab/PycharmProjects/Center_Pose/data/pedestrian-phone.jpg"
     opt=opts().init()
     Detector=CtdetDetector(opt)
 
     human_candidates = Detector.run(img_path)
-    img=cv2.imread('/home/rvlab/Documents/lighttrack/data/pedestrian-phone.jpg')
+    img=cv2.imread('/home/rvlab/PycharmProjects/Center_Pose/data/pedestrian-phone.jpg')
     cv2.imshow('image',img)
     cv2.waitKey(1000)
     for i in human_candidates:
