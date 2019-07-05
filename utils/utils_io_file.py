@@ -60,8 +60,6 @@ def file_to_video(filepath):
         video = cv2.VideoCapture(filepath)
     except IOError:
         print('cannot open video file: ' + filepath)
-    else:
-        print('unknown error reading video file')
     return video
 
 

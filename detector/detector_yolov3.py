@@ -18,8 +18,8 @@ from torchvision import datasets
 from torch.autograd import Variable
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config_path", type=str, default="/home/rvlab/Documents/lighttrack/detector/config/yolov3.cfg", help="path to model config file")
-parser.add_argument("--weights_path", type=str, default="/home/rvlab/Documents/lighttrack/weights/YOLOv3/yolov3.weights", help="path to weights file")
+parser.add_argument("--config_path", type=str, default="detector/config/yolov3.cfg", help="path to model config file")
+parser.add_argument("--weights_path", type=str, default="weights/YOLOv3/yolov3.weights", help="path to weights file")
 parser.add_argument("--conf_thres", type=float, default=0.8, help="object confidence threshold")
 parser.add_argument("--nms_thres", type=float, default=0.4, help="iou thresshold for non-maximum suppression")
 parser.add_argument("--batch_size", type=int, default=1, help="size of the batches")
@@ -59,6 +59,7 @@ def inference_yolov3(img_path):
 
 
 def inference_yolov3_from_img(img):
+    start_time=time.time()
     input_img = preprocess_img_for_yolo(img)
 
     # Configure input
@@ -93,6 +94,8 @@ def inference_yolov3_from_img(img):
             if int(cls_pred) == 0:
                 human_candidate = [x1, y1, box_w, box_h]
                 human_candidates.append(human_candidate)
+    end_time=time.time()
+    tot_time=end_time-start_time
     return human_candidates
 
 

@@ -21,7 +21,7 @@ class opts(object):
                                   '2: show the network output features'
                                   '3: use matplot to display' # useful when lunching training with ipython notebook
                                   '4: save all visualizations to disk')
-    self.parser.add_argument('--load_model', default='/home/rvlab/PycharmProjects/Center_Pose/weights/CenterNet/ctdet_coco_dla_2x.pth',
+    self.parser.add_argument('--load_model', default='weights/CenterNet/ctdet_coco_dla_2x.pth',
                              help='path to pretrained model')
     self.parser.add_argument('--resume', action='store_true',
                              help='resume an experiment. '
@@ -185,7 +185,7 @@ class opts(object):
     # exdet
     self.parser.add_argument('--agnostic_ex', action='store_true',
                              help='use category agnostic extreme points.')
-    self.parser.add_argument('--scores_thresh', type=float, default=0.3,
+    self.parser.add_argument('--scores_thresh', type=float, default=0.1,
                              help='threshold for extreme point heatmap.')
     self.parser.add_argument('--center_thresh', type=float, default=0.1,
                              help='threshold for centermap.')
@@ -233,7 +233,6 @@ class opts(object):
     opt.test_scales = [float(i) for i in opt.test_scales.split(',')]
 
     opt.fix_res = not opt.keep_res
-    print('Fix size testing.' if opt.fix_res else 'Keep resolution testing.')
     opt.reg_offset = not opt.not_reg_offset
     opt.reg_bbox = not opt.not_reg_bbox
     opt.hm_hp = not opt.not_hm_hp
@@ -262,14 +261,11 @@ class opts(object):
       if i < rest_batch_size % (len(opt.gpus) - 1):
         slave_chunk_size += 1
       opt.chunk_sizes.append(slave_chunk_size)
-    print('training chunk_sizes:', opt.chunk_sizes)
-
     opt.root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
     opt.data_dir = os.path.join(opt.root_dir, 'data')
     # opt.exp_dir = os.path.join(opt.root_dir, 'exp', opt.task)
     opt.save_dir = '/home/rvlab/Desktop'
     opt.debug_dir = os.path.join(opt.save_dir, 'debug')
-    print('The output will be saved to ', opt.save_dir)
     
     if opt.resume and opt.load_model == '':
       model_path = opt.save_dir[:-4] if opt.save_dir.endswith('TEST') \
@@ -304,18 +300,6 @@ class opts(object):
       'ctdet': {'default_resolution': [512, 512], 'num_classes': 80, 
                 'mean': [0.408, 0.447, 0.470], 'std': [0.289, 0.274, 0.278],
                 'dataset': 'coco'},
-      'exdet': {'default_resolution': [512, 512], 'num_classes': 80, 
-                'mean': [0.408, 0.447, 0.470], 'std': [0.289, 0.274, 0.278],
-                'dataset': 'coco'},
-      'multi_pose': {
-        'default_resolution': [512, 512], 'num_classes': 1, 
-        'mean': [0.408, 0.447, 0.470], 'std': [0.289, 0.274, 0.278],
-        'dataset': 'coco_hp', 'num_joints': 17,
-        'flip_idx': [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], 
-                     [11, 12], [13, 14], [15, 16]]},
-      'ddd': {'default_resolution': [384, 1280], 'num_classes': 3, 
-                'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225],
-                'dataset': 'kitti'},
     }
     class Struct:
       def __init__(self, entries):

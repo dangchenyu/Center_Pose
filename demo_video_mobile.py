@@ -10,8 +10,6 @@ import argparse
 
 # import vision essentials
 import cv2
-import numpy as np
-import tensorflow as tf
 
 # import Network
 from network_mobile_deconv import Network
@@ -19,10 +17,7 @@ from network_mobile_deconv import Network
 from HPE.dataset import Preprocessing
 from HPE.config import cfg
 from lib.tfflat.base import Tester
-from lib.tfflat.utils import mem_info
-from lib.tfflat.logger import colorlogger
 from lib.nms.gpu_nms import gpu_nms
-from lib.nms.cpu_nms import cpu_nms
 
 
 # import my own utils
@@ -68,7 +63,7 @@ def initialize_parameters():
 
 def light_track(pose_estimator,detector,
                 image_folder, output_json_path,
-                visualize_folder, output_video_path):
+                visualize_folder, detect_folder,output_video_path):
 
     global total_time_POSE, total_time_DET, total_time_ALL, total_num_FRAMES, total_num_PERSONS
     ''' 1. statistics: get total time for lighttrack processing'''
@@ -85,6 +80,13 @@ def light_track(pose_estimator,detector,
     img_paths = get_immediate_childfile_paths(image_folder)
     num_imgs = len(img_paths)
     total_num_FRAMES = num_imgs
+    if detector == 'Centernet':
+        from detector.CenterNet import CtdetDetector
+        from detector.config.opts import opts
+        opt = opts().init()
+        centernet = CtdetDetector(opt)
+    elif detector == 'yolo':
+        from detector.detector_yolov3 import inference_yolov3
 
     while img_id < num_imgs-1:
         img_id += 1
@@ -102,15 +104,14 @@ def light_track(pose_estimator,detector,
 
         # perform detection at keyframes
         st_time_detection = time.time()
-        if detector=='Centernet':
-            from detector.CenterNet import CtdetDetector
-            from detector.config.opts import opts
-            opt = opts().init()
-            centernet = CtdetDetector(opt)
-            human_candidates = centernet.run(img_path)
-        elif detector=='yolo':
-            from detector.detector_yolov3 import inference_yolov3
-            human_candidates = inference_yolov3(img_path)
+        image = cv2.imread(img_path)
+        if detector == 'Centernet':
+            human_candidates = centernet.run(image)
+        elif detector == 'yolo':
+            human_candidates=inference_yolov3(img_path)
+
+
+
 
         end_time_detection = time.time()
         total_time_DET += (end_time_detection - st_time_detection)
@@ -142,7 +143,7 @@ def light_track(pose_estimator,detector,
         total_num_PERSONS += num_dets
 
         for det_id in range(num_dets):
-            # obtain bbox position and track id
+            # obtain bbox position
             bbox_gt = human_candidates[det_id]
 
             # enlarge bbox by 20% with same center position
@@ -167,8 +168,6 @@ def light_track(pose_estimator,detector,
             keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
             end_time_pose = time.time()
             total_time_POSE += (end_time_pose - st_time_pose)
-            keypoints_gt = keypoints
-
             bbox_det_dict = {"img_id":img_id,
                              "det_id":det_id,
                              "imgpath": img_path,
@@ -213,6 +212,8 @@ def light_track(pose_estimator,detector,
         img_paths = get_immediate_childfile_paths(visualize_folder)
         avg_fps = total_num_FRAMES / total_time_ALL
         make_video_from_images(img_paths, output_video_path, fps=avg_fps, size=None, is_color=True, format="XVID")
+
+
 
 
 
@@ -476,7 +477,6 @@ def pose_to_standard_mot(keypoints_list_list, dets_list_list):
 
             img_id = keypoints_dict["img_id"]
             det_id = keypoints_dict["det_id"]
-            # track_id = keypoints_dict["track_id"]
             img_path = keypoints_dict["imgpath"]
 
             bbox_dets_data = dets_list[det_id]
@@ -524,7 +524,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--video_path', '-v', type=str, dest='video_path', default="data/demo/video.mp4")
     parser.add_argument('--model', '-m', type=str, dest='test_model', default="weights/mobile-deconv/snapshot_296.ckpt")
-    parser.add_argument('--detector','-d',type=str,dest='human_detector',default='Centernet')
+    parser.add_argument('--detector','-d',type=str,dest='human_detector',default='yolo')
     args = parser.parse_args()
     print("Human Detector:{}".format(args.human_detector))
     args.bbox_thresh = 0.4
@@ -538,14 +538,13 @@ if __name__ == '__main__':
     visualize_folder = "data/demo/visualize"
     output_video_folder = "data/demo/videos"
     output_json_folder = "data/demo/jsons"
-
     video_name = os.path.basename(video_path)
     video_name = os.path.splitext(video_name)[0]
     image_folder = os.path.join("data/demo", video_name)
     visualize_folder = os.path.join(visualize_folder, video_name)
     output_json_path = os.path.join(output_json_folder, video_name+".json")
-    output_video_path = os.path.join(output_video_folder, video_name+"_out.mp4")
-
+    output_video_path = os.path.join(output_video_folder, video_name+"_out_yolo.mp4")
+    detect_folder=os.path.join("data/demo",'detect')
     if is_video(video_path):
         video_to_images(video_path)
         create_folder(visualize_folder)
@@ -554,7 +553,7 @@ if __name__ == '__main__':
 
         light_track(pose_estimator,detector,
                     image_folder, output_json_path,
-                    visualize_folder, output_video_path)
+                    visualize_folder, detect_folder,output_video_path)
 
         print("Finished video {}".format(output_video_path))
 
@@ -562,12 +561,10 @@ if __name__ == '__main__':
         print("total_time_ALL: {:.2f}s".format(total_time_ALL))
         print("total_time_DET: {:.2f}s".format(total_time_DET))
         print("total_time_POSE: {:.2f}s".format(total_time_POSE))
-        print("total_time_LIGHTTRACK: {:.2f}s".format(total_time_ALL - total_time_DET - total_time_POSE))
         print("total_num_FRAMES: {:d}".format(total_num_FRAMES))
         print("total_num_PERSONS: {:d}\n".format(total_num_PERSONS))
         print("Average FPS: {:.2f}fps".format(total_num_FRAMES / total_time_ALL))
         print("Average FPS excluding Pose Estimation: {:.2f}fps".format(total_num_FRAMES / (total_time_ALL - total_time_POSE)))
         print("Average FPS excluding Detection: {:.2f}fps".format(total_num_FRAMES / (total_time_ALL - total_time_DET)))
-        print("Average FPS for framework only: {:.2f}fps".format(total_num_FRAMES / (total_time_ALL - total_time_DET - total_time_POSE)))
     else:
         print("Video does not exist.")

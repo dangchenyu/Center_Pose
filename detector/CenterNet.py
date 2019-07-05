@@ -1,5 +1,4 @@
 import cv2
-from detector.config.debugger import Debugger
 import time
 import torch
 import numpy as np
@@ -17,8 +16,6 @@ class CtdetDetector(object):
             opt.device = torch.device('cuda')
         else:
             opt.device = torch.device('cpu')
-
-        print('Creating model...')
         self.model = create_model(opt.arch, opt.heads, opt.head_conv)
         self.model = load_model(self.model, opt.load_model)
         self.model = self.model.to(opt.device)
@@ -113,33 +110,9 @@ class CtdetDetector(object):
                 results[j] = results[j][keep_inds]
         return results
 
-    def debug(self, debugger, images, dets, output, scale=1):
-        detection = dets.detach().cpu().numpy().copy()
-        detection[:, :, :4] *= self.opt.down_ratio
-        for i in range(1):
-            img = images[i].detach().cpu().numpy().transpose(1, 2, 0)
-            img = ((img * self.std + self.mean) * 255).astype(np.uint8)
-            pred = debugger.gen_colormap(output['hm'][i].detach().cpu().numpy())
-            debugger.add_blend_img(img, pred, 'pred_hm_{:.1f}'.format(scale))
-            debugger.add_img(img, img_id='out_pred_{:.1f}'.format(scale))
-            for k in range(len(dets[i])):
-                if detection[i, k, 4] > self.opt.center_thresh:
-                    debugger.add_coco_bbox(detection[i, k, :4], detection[i, k, -1],
-                                           detection[i, k, 4],
-                                           img_id='out_pred_{:.1f}'.format(scale))
-
-    def show_results(self, debugger, image, results):
-        debugger.add_img(image, img_id='ctdet')
-        for j in range(1, self.num_classes + 1):
-            for bbox in results[j]:
-                if bbox[4] > self.opt.vis_thresh:
-                    debugger.add_coco_bbox(bbox[:4], j - 1, bbox[4], img_id='ctdet')
-        debugger.show_all_imgs(pause=self.pause)
     def run(self, image_or_path_or_tensor, meta=None):
         load_time, pre_time, net_time, dec_time, post_time = 0, 0, 0, 0, 0
         merge_time, tot_time = 0, 0
-        debugger = Debugger(dataset=self.opt.dataset, ipynb=(self.opt.debug == 3),
-                            theme=self.opt.debugger_theme)
         start_time = time.time()
         pre_processed = False
         if isinstance(image_or_path_or_tensor, np.ndarray):
@@ -175,10 +148,6 @@ class CtdetDetector(object):
             net_time += forward_time - pre_process_time
             decode_time = time.time()
             dec_time += decode_time - forward_time
-
-            if self.opt.debug >= 2:
-                self.debug(debugger, images, dets, output, scale)
-
             dets = self.post_process(dets, meta, scale)
             torch.cuda.synchronize()
             post_process_time = time.time()
@@ -197,6 +166,7 @@ class CtdetDetector(object):
                 for bbox in results[j]:
                     if bbox[4]>self.conf:
                         human_candidates.append([bbox[0],bbox[1],bbox[2]-bbox[0],bbox[3]-bbox[1]])
+        print('tot_time{:.2f}load_time{:.2f}pre_time{:.2f}net_time{:.2f}dec_time{:.2f}post_time{:.2f}merge_time{:.2f}'.format(tot_time,load_time,pre_time,net_time,dec_time,post_time,merge_time))
 
         return human_candidates
 if __name__ == "__main__":
@@ -209,7 +179,6 @@ if __name__ == "__main__":
     cv2.imshow('image',img)
     cv2.waitKey(1000)
     for i in human_candidates:
-        print(i)
         cv2.rectangle(img,(int (i[0]),int (i[1])),(int(i[2]+i[0]),int(i[3]+i[1])),(0,155,0),5)
     cv2.imshow('person', img)
     cv2.waitKey()
